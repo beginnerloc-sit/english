@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-dotenv
+openai
+# Optional but recommended for higher-quality lemmatization of arbitrary text.
+# The profiler works without it (it falls back to the NGSL inflection map), so
+# this is intentionally not a hard dependency.
+# spacy
+# en_core_web_sm  (install via: python -m spacy download en_core_web_sm)
