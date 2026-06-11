@@ -268,9 +268,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 }
 .read-controls .mic-fab { width: 52px; height: 52px; box-shadow: 0 6px 16px rgba(21,122,99,0.35); }
 .read-controls .mic-fab svg { width: 22px; height: 22px; }
-.read-controls .read-hint { font-size: 11px; }
-.read-controls .ghost.mini { padding: 4px 10px; font-size: 12px; }
+.read-controls .read-hint { font-size: 12px; }
 .read-controls .read-feedback { margin: 0; }
+.link-skip { background: none; border: none; min-height: 0; padding: 0; color: var(--accent); font-weight: 700; font-size: 12px; }
+.link-skip:hover { background: none; text-decoration: underline; }
 .mic-fab {
   width: 72px; height: 72px; border-radius: 50%; padding: 0;
   display: flex; align-items: center; justify-content: center;

@@ -157,8 +157,10 @@ export function Input({ lesson, onDone }) {
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
   const [result, setResult] = useState(null); // null | "ok" | "retry"
+  const [congrats, setCongrats] = useState(false);
   const recRef = useRef(null);
   const scrollRef = useRef(null);
+  const congratsFired = useRef(false);
   const hasSR =
     typeof window !== "undefined" &&
     (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -179,27 +181,48 @@ export function Input({ lesson, onDone }) {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [idx, heard, result]);
 
+  // Show a completion popup once all lines are read.
+  useEffect(() => {
+    if (allDone && !congratsFired.current) {
+      congratsFired.current = true;
+      setCongrats(true);
+    }
+  }, [allDone]);
+
   const advance = () => setIdx((i) => i + 1);
 
-  // Hold-to-talk: press to start listening, release to stop (finalizes result).
+  // Hold-to-talk: capture audio while held, evaluate the whole thing on release.
   const readDown = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR || listening) return;
+    window.speechSynthesis?.cancel(); // stop the auto-played line so the mic is clean
     const rec = new SR();
     rec.lang = "en-US";
-    rec.interimResults = false;
+    rec.continuous = true;
+    rec.interimResults = true;
+    let finalText = "";
+    let interim = "";
+    const target = line;
     rec.onresult = (e) => {
-      const said = e.results[0][0].transcript;
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript + " ";
+        else interim = r[0].transcript;
+      }
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => {
+      setListening(false);
+      const said = (finalText.trim() || interim).trim();
+      if (!said) return; // nothing captured
       setHeard(said);
-      if (readingMatches(line.en, said)) {
+      if (target && readingMatches(target.en, said)) {
         setResult("ok");
-        setTimeout(advance, 700); // brief tick, then next line
+        setTimeout(advance, 700);
       } else {
         setResult("retry");
       }
     };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
     setListening(true);
     setResult(null);
     try { rec.start(); } catch {}
@@ -270,8 +293,11 @@ export function Input({ lesson, onDone }) {
           >
             <MicGlyph size={28} />
           </button>
-          <span className="read-hint">{listening ? "Đang nghe — thả khi xong" : "Giữ để đọc"}</span>
-          <button className="ghost mini" onClick={advance}>Bỏ qua ›</button>
+          <span className="read-hint">
+            {listening ? "Đang nghe — thả khi xong" : "Giữ để đọc"}
+            {" · "}
+            <button className="link-skip" onClick={advance}>Bỏ qua ›</button>
+          </span>
         </div>
       )}
 
@@ -282,10 +308,18 @@ export function Input({ lesson, onDone }) {
         </div>
       )}
 
-      {allDone && (
-        <div className="read-controls">
-          <p className="feedback">🎉 Bạn đã đọc hết hội thoại!</p>
-          <button className="primary" onClick={onDone}>Tiếp</button>
+      {congrats && (
+        <div className="modal-overlay" onClick={onDone}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="celebrate">🎉</div>
+            <h2>Tuyệt vời!</h2>
+            <p className="muted">
+              Bạn đã đọc hết hội thoại. Cùng chuyển sang phần <strong>Từ mới</strong> nhé!
+            </p>
+            <div className="actions">
+              <button className="primary" onClick={onDone}>Tiếp tục</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
