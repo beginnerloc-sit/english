@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, speak } from "./api.js";
+import { api, speak, stopAudio } from "./api.js";
 import { connectRealtime } from "./realtimeClient.js";
 
 // Clean speaker icon (inherits text color) — replaces the inconsistent <SpeakerIcon /> emoji.
@@ -198,7 +198,7 @@ export function Input({ lesson, onDone }) {
     // Kill any leftover recognition so a new press always starts fresh.
     try { recRef.current?.abort?.(); } catch {}
     recRef.current = null;
-    window.speechSynthesis?.cancel(); // stop the auto-played line so the mic is clean
+    stopAudio(); // stop the auto-played line (TTS) so the mic only hears the student
 
     const rec = new SR();
     rec.lang = "en-US";

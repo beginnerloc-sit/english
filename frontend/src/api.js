@@ -152,7 +152,7 @@ function browserSpeak(text, rate, voice) {
   window.speechSynthesis.speak(u);
 }
 
-function stopAudio() {
+export function stopAudio() {
   if (_current) {
     _current.pause();
     _current = null;
