@@ -197,15 +197,16 @@ def mint_token(
                     # Live transcription of the learner's speech — drives the
                     # subtitles and tells the client a turn finished.
                     "transcription": {"model": OPENAI_TRANSCRIBE_MODEL},
-                    # Detect end-of-turn (beginners pause a lot, so be generous),
-                    # but DO NOT auto-create a reply: the client creates exactly
-                    # one reply per turn so the teacher never answers twice and
-                    # always advances. interrupt_response lets the student barge in.
+                    # Detect end-of-turn (beginners pause a lot, so be generous)
+                    # and AUTO-reply once per turn, using the full session
+                    # instructions (persona + lesson plan + tool). The client only
+                    # triggers the opening greeting; everything else is automatic,
+                    # so the teacher always responds and keeps full context.
                     "turn_detection": {
                         "type": "server_vad",
                         "silence_duration_ms": 1500,
                         "threshold": 0.5,
-                        "create_response": False,
+                        "create_response": True,
                         "interrupt_response": True,
                     },
                 },

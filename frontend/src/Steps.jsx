@@ -520,57 +520,6 @@ export function Speak({ lesson, studentName, onError, onDone }) {
       .catch(() => {});
   };
 
-  // The student finished a turn. The server does NOT auto-reply (create_response
-  // is off), so WE create exactly one teacher reply — react to what they said,
-  // then move to the next point. One reply per turn = no double audio, and the
-  // moment we recognize their answer we advance (no forced repetition).
-  // Add a short COACHING NOTE to the conversation (context only, never spoken),
-  // then ask for the next reply WITHOUT overriding instructions — so the teacher
-  // keeps its full persona AND the entire chat history (name, words, grammar,
-  // everything said so far). Overriding `instructions` per turn was wiping that.
-  const coach = (note) => {
-    sessionRef.current?.send({
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "system",
-        content: [{ type: "input_text", text: `[Coaching note] ${note}` }],
-      },
-    });
-    sessionRef.current?.send({ type: "response.create" });
-  };
-
-  const handleStudentTurn = (transcript) => {
-    const t = (transcript || "").trim();
-    if (!t) {
-      coach("You didn't catch the student clearly. Kindly, in Vietnamese, ask them to say it once more.");
-      return;
-    }
-
-    const cur = script.find((x) => !doneRef.current.has(x.id)); // current point
-
-    // All points done -> free conversation.
-    if (!cur) {
-      coach(
-        "All the lesson points are finished. Now just have a FREE, friendly, OPEN " +
-          "conversation with the student about today's theme — chat naturally, keep " +
-          "using today's words and grammar, help in Vietnamese when needed. Do NOT say goodbye."
-      );
-      return;
-    }
-
-    // The MODEL decides whether the current point is complete and signals it with
-    // mark_checkpoint. We do NOT auto-advance here.
-    coach(
-      `The student just spoke. The CURRENT point is: "${cur.goal}" (${cur.say || ""}).\n` +
-        `Judge their turn:\n` +
-        `• If they have GENUINELY done this point, briefly praise them in Vietnamese, ` +
-        `call the function mark_checkpoint with id "${cur.id}", then move to the next point.\n` +
-        `• If they have NOT done it yet, went off-topic, or asked for help, STAY on this ` +
-        `point and guide/help them in Vietnamese — do NOT call mark_checkpoint.\n` +
-        `Only mark it done when the point is truly complete. Do not rush ahead.`
-    );
-  };
 
   const startRealtime = async () => {
     setStatus("connecting");
@@ -626,13 +575,13 @@ export function Speak({ lesson, studentName, onError, onDone }) {
             }
           }
 
-          // Student's turn recognized -> log it and ask the teacher to respond.
+          // Student's turn recognized -> just log it. The server auto-replies
+          // (create_response is on) using the full session instructions.
           if (ev.type === "conversation.item.input_audio_transcription.completed") {
             const t = ev.transcript || "";
             setHeard(t);
             addTurn("student", t);
             onError?.(t);
-            handleStudentTurn(t);
           }
         },
       });
