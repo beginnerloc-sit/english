@@ -25,6 +25,8 @@ OPENAI_TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-realtime-whi
 # Reading voice (TTS) for dialogue/word playback — natural OpenAI voices.
 OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts").strip()
 OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova").strip()
+# Speech-to-text for the read-aloud step (record -> upload -> transcribe).
+OPENAI_STT_MODEL = os.getenv("OPENAI_STT_MODEL", "whisper-1").strip()
 
 BOOTSTRAP_KNOWN_COUNT = int(os.getenv("BOOTSTRAP_KNOWN_COUNT", "100"))
 TARGETS_PER_LESSON = int(os.getenv("TARGETS_PER_LESSON", "6"))

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -893,6 +893,34 @@ def translate(req: TranslateRequest, user: User = Depends(current_user)):
         return {"en": data.get("en", text), "vi": data.get("vi", "")}
     except Exception as exc:
         raise HTTPException(502, f"translate failed: {exc}")
+
+
+# --------------------------------------------------------------------------- #
+# Speech-to-text (read-aloud: record on the client -> transcribe here)
+# --------------------------------------------------------------------------- #
+@app.post("/transcribe")
+async def transcribe(
+    file: UploadFile = File(...), user: User = Depends(current_user)
+):
+    if not HAS_OPENAI:
+        raise HTTPException(503, "Transcription requires OPENAI_API_KEY")
+    data = await file.read()
+    if not data:
+        return {"text": ""}
+
+    from config import OPENAI_API_KEY, OPENAI_STT_MODEL
+    from openai import OpenAI
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    try:
+        tr = client.audio.transcriptions.create(
+            model=OPENAI_STT_MODEL,
+            file=(file.filename or "audio.webm", data, file.content_type or "audio/webm"),
+            language="en",
+        )
+        return {"text": getattr(tr, "text", "") or ""}
+    except Exception as exc:
+        raise HTTPException(502, f"transcribe failed: {exc}")
 
 
 @app.get("/health")

@@ -3,6 +3,7 @@ uvicorn[standard]
 sqlalchemy
 pydantic
 python-dotenv
+python-multipart
 openai
 # Optional but recommended for higher-quality lemmatization of arbitrary text.
 # The profiler works without it (it falls back to the NGSL inflection map), so
