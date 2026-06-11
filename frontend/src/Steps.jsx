@@ -776,15 +776,21 @@ export function Speak({ lesson, studentName, onError, onDone }) {
 
       {status === "live" && (
         <>
-          <div className="stage compact">
-            <Character
-              side="teacher"
-              face={FACES[mood] || FACES.idle}
-              badge={BADGES[mood] || BADGES.idle}
-              speaking={mood === "talking" || mood === "cheer"}
-              label="Giáo viên"
-            />
-            <Character side="student" face="🧑‍🎓" speaking={talking} label={studentName || "Bạn"} />
+          <div className="tutor-status">
+            <span
+              className={`tutor-ava ${mood === "talking" || mood === "cheer" ? "talking" : ""}`}
+            >
+              {FACES[mood] || FACES.idle}
+            </span>
+            <span className="tutor-state">
+              {talking
+                ? "Đang nghe bạn…"
+                : mood === "talking" || mood === "cheer"
+                ? "Giáo viên đang nói…"
+                : mood === "think"
+                ? "Đang suy nghĩ…"
+                : "Giáo viên"}
+            </span>
           </div>
 
           <div className="convo" ref={logRef}>

@@ -396,6 +396,19 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 /* Speak step fills the card; conversation scrolls, controls pinned at bottom */
 .speak-step { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* Compact tutor status bar (replaces the big avatars) */
+.tutor-status {
+  display: flex; align-items: center; gap: 10px; padding: 8px 4px 4px;
+  flex: 0 0 auto;
+}
+.tutor-ava {
+  width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.tutor-ava.talking { border-color: var(--accent); animation: chat 0.6s ease-in-out infinite; }
+.tutor-state { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
 .speak-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .speak-bottom {
   flex: 0 0 auto; margin-top: auto; padding-top: 10px;
