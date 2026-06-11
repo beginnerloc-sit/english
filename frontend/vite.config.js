@@ -23,6 +23,7 @@ export default defineConfig({
         "/session",
         "/settings",
         "/progress",
+        "/transcribe",
         "/translate",
         "/tts",
         "/health",

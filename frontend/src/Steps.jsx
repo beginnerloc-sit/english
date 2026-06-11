@@ -156,15 +156,17 @@ export function Input({ lesson, onDone }) {
   const [idx, setIdx] = useState(0); // current line to read
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
-  const [result, setResult] = useState(null); // null | "ok" | "retry"
+  const [result, setResult] = useState(null); // null | "checking" | "ok" | "retry"
   const [congrats, setCongrats] = useState(false);
-  const recRef = useRef(null);
-  const accRef = useRef({ final: "", interim: "", target: null });
+  const streamRef = useRef(null);
+  const mrRef = useRef(null);
+  const chunksRef = useRef([]);
   const scrollRef = useRef(null);
   const congratsFired = useRef(false);
-  const hasSR =
-    typeof window !== "undefined" &&
-    (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const hasMic =
+    typeof navigator !== "undefined" &&
+    navigator.mediaDevices &&
+    typeof window.MediaRecorder !== "undefined";
   const allDone = idx >= dialogue.length;
   const line = dialogue[idx];
 
@@ -192,63 +194,62 @@ export function Input({ lesson, onDone }) {
 
   const advance = () => setIdx((i) => i + 1);
 
-  // One persistent recognition instance, reused across presses (creating a new
-  // one each time hits Chrome's cooldown and fails on the 2nd press).
-  const ensureRec = () => {
-    if (recRef.current) return recRef.current;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return null;
-    const rec = new SR();
-    rec.lang = "en-US";
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.onresult = (e) => {
-      const a = accRef.current;
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) a.final += r[0].transcript + " ";
-        else a.interim = r[0].transcript;
-      }
-    };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => {
-      setListening(false);
-      const a = accRef.current;
-      const said = (a.final.trim() || a.interim).trim();
-      if (!said) return;
-      setHeard(said);
-      if (a.target && readingMatches(a.target.en, said)) {
-        setResult("ok");
-        setTimeout(advance, 700);
-      } else {
-        setResult("retry");
-      }
-    };
-    recRef.current = rec;
-    return rec;
-  };
-
-  // Hold-to-talk: capture audio while held, evaluate on release.
-  const readDown = () => {
-    const rec = ensureRec();
-    if (!rec) return;
+  // Hold-to-talk via MediaRecorder: record while held, transcribe on release.
+  const readDown = async () => {
+    if (!hasMic) return;
     pauseAudio(); // stop the auto-played line so the mic only hears the student
-    accRef.current = { final: "", interim: "", target: line };
-    setResult(null);
     try {
-      rec.start();
-      setListening(true);
+      if (!streamRef.current) {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
     } catch {
-      // Already running (fast re-press) — restart cleanly.
-      try { rec.stop(); } catch {}
+      setResult("retry");
+      setHeard("(không truy cập được micro)");
+      return;
     }
+    const target = line;
+    chunksRef.current = [];
+    const mr = new MediaRecorder(streamRef.current);
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
+    mr.onstop = async () => {
+      setListening(false);
+      const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+      if (!blob.size) { setResult(null); return; }
+      setResult("checking");
+      try {
+        const { text } = await api.transcribe(blob);
+        const said = (text || "").trim();
+        setHeard(said);
+        if (said && target && readingMatches(target.en, said)) {
+          setResult("ok");
+          setTimeout(advance, 700);
+        } else {
+          setResult("retry");
+        }
+      } catch {
+        setResult("retry");
+        setHeard("(lỗi nhận dạng, thử lại)");
+      }
+    };
+    mrRef.current = mr;
+    setResult(null);
+    setHeard("");
+    mr.start();
+    setListening(true);
   };
   const readUp = () => {
-    try { recRef.current?.stop(); } catch {}
+    try {
+      if (mrRef.current && mrRef.current.state !== "inactive") mrRef.current.stop();
+    } catch {}
   };
 
-  // Tear down recognition on unmount.
-  useEffect(() => () => { try { recRef.current?.abort?.(); } catch {} }, []);
+  // Release the mic stream on unmount.
+  useEffect(
+    () => () => {
+      try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
+    },
+    []
+  );
 
   return (
     <div className="read-step">
@@ -292,13 +293,17 @@ export function Input({ lesson, onDone }) {
       </div>
 
       {/* Pinned bottom controls */}
-      {!allDone && line && hasSR && (
+      {!allDone && line && hasMic && (
         <div className="read-controls">
-          {heard && (
-            <p className={`read-feedback ${result}`}>
-              {result === "ok" ? "✓ Tuyệt vời! " : "Bạn đọc: "}“{heard}”
-              {result === "retry" && " — thử lại nhé"}
-            </p>
+          {result === "checking" ? (
+            <p className="read-feedback">Đang kiểm tra…</p>
+          ) : (
+            heard && (
+              <p className={`read-feedback ${result}`}>
+                {result === "ok" ? "✓ Tuyệt vời! " : "Bạn đọc: "}“{heard}”
+                {result === "retry" && " — thử lại nhé"}
+              </p>
+            )
           )}
           <button
             className={`mic-fab ${listening ? "on" : ""}`}
@@ -319,9 +324,9 @@ export function Input({ lesson, onDone }) {
         </div>
       )}
 
-      {!allDone && line && !hasSR && (
+      {!allDone && line && !hasMic && (
         <div className="read-controls">
-          <p className="muted">Trình duyệt không hỗ trợ nhận giọng nói. Đọc to rồi nhấn tiếp.</p>
+          <p className="muted">Trình duyệt không hỗ trợ ghi âm. Đọc to rồi nhấn tiếp.</p>
           <button className="primary" onClick={advance}>Tôi đã đọc ›</button>
         </div>
       )}

@@ -121,6 +121,18 @@ export const api = {
     }),
   translate: (text) =>
     req("/translate", { method: "POST", body: JSON.stringify({ text }) }),
+  transcribe: async (blob, filename = "audio.webm") => {
+    const fd = new FormData();
+    fd.append("file", blob, filename);
+    const token = auth.get();
+    const res = await fetch(BASE + "/transcribe", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    if (!res.ok) throw new Error("transcribe failed");
+    return res.json();
+  },
   saveProduction: (lesson_id, text) =>
     req("/produce", {
       method: "POST",
