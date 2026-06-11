@@ -181,7 +181,8 @@ export function Input({ lesson, onDone }) {
 
   const advance = () => setIdx((i) => i + 1);
 
-  const startRead = () => {
+  // Hold-to-talk: press to start listening, release to stop (finalizes result).
+  const readDown = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
     const rec = new SR();
@@ -201,8 +202,11 @@ export function Input({ lesson, onDone }) {
     rec.onerror = () => setListening(false);
     setListening(true);
     setResult(null);
-    rec.start();
+    try { rec.start(); } catch {}
     recRef.current = rec;
+  };
+  const readUp = () => {
+    try { recRef.current?.stop(); } catch {}
   };
 
   return (
@@ -257,13 +261,16 @@ export function Input({ lesson, onDone }) {
           )}
           <button
             className={`mic-fab ${listening ? "on" : ""}`}
-            onClick={startRead}
-            disabled={listening}
-            aria-label="Đọc câu này"
+            onMouseDown={readDown}
+            onMouseUp={readUp}
+            onMouseLeave={() => listening && readUp()}
+            onTouchStart={(e) => { e.preventDefault(); readDown(); }}
+            onTouchEnd={(e) => { e.preventDefault(); readUp(); }}
+            aria-label="Giữ để đọc"
           >
             <MicGlyph size={28} />
           </button>
-          <span className="read-hint">{listening ? "Đang nghe…" : "Chạm để đọc"}</span>
+          <span className="read-hint">{listening ? "Đang nghe — thả khi xong" : "Giữ để đọc"}</span>
           <button className="ghost mini" onClick={advance}>Bỏ qua ›</button>
         </div>
       )}
