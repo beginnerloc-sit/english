@@ -159,8 +159,6 @@ export function Input({ lesson, onDone }) {
   const [result, setResult] = useState(null); // null | "ok" | "retry"
   const [congrats, setCongrats] = useState(false);
   const recRef = useRef(null);
-  const accRef = useRef({ final: "", interim: "", target: null });
-  const runningRef = useRef(false);
   const scrollRef = useRef(null);
   const congratsFired = useRef(false);
   const hasSR =
@@ -193,68 +191,57 @@ export function Input({ lesson, onDone }) {
 
   const advance = () => setIdx((i) => i + 1);
 
-  // One persistent SpeechRecognition instance, reused across presses.
-  const ensureRec = () => {
-    if (recRef.current) return recRef.current;
+  // Press to talk. iOS Safari won't reliably REUSE a recognition instance, so we
+  // create a FRESH one every press (and never call speechSynthesis.cancel, which
+  // wedges recognition on iOS — we only pause the played <audio>).
+  const readDown = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return null;
+    if (!SR) return;
+    try { recRef.current?.abort?.(); } catch {}
+    recRef.current = null;
+    pauseAudio();
+
     const rec = new SR();
     rec.lang = "en-US";
-    rec.continuous = false; // auto-stops on silence too (tap OR hold both work)
+    rec.continuous = false; // also auto-stops on silence (tap OR hold both work)
     rec.interimResults = true;
     rec.maxAlternatives = 1;
-    rec.onstart = () => { runningRef.current = true; setListening(true); };
+    let finalText = "";
+    let interim = "";
+    const target = line;
     rec.onresult = (e) => {
-      const a = accRef.current;
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
-        if (r.isFinal) a.final += r[0].transcript + " ";
-        else a.interim = r[0].transcript;
+        if (r.isFinal) finalText += r[0].transcript + " ";
+        else interim = r[0].transcript;
       }
     };
     rec.onerror = (e) => {
-      runningRef.current = false;
       setListening(false);
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        setResult("retry");
+      if (e.error === "not-allowed" || e.error === "service-not-allowed")
         setHeard("(hãy cho phép micro cho trang này)");
-      } else if (e.error === "no-speech") {
-        setResult("retry");
-        setHeard("(chưa nghe rõ, thử lại)");
-      }
     };
     rec.onend = () => {
-      runningRef.current = false;
       setListening(false);
-      const a = accRef.current;
-      const said = (a.final.trim() || a.interim).trim();
+      const said = (finalText.trim() || interim).trim();
       if (!said) return;
       setHeard(said);
-      if (a.target && readingMatches(a.target.en, said)) {
+      if (target && readingMatches(target.en, said)) {
         setResult("ok");
         setTimeout(advance, 700);
       } else {
         setResult("retry");
       }
     };
-    recRef.current = rec;
-    return rec;
-  };
-
-  // Hold (or tap) to talk.
-  const readDown = () => {
-    const rec = ensureRec();
-    if (!rec || runningRef.current) return;
-    pauseAudio(); // stop the auto-played line so the mic only hears the student
-    accRef.current = { final: "", interim: "", target: line };
     setResult(null);
     setHeard("");
+    // start() must run inside the user gesture (iOS requirement) — call directly.
     try {
       rec.start();
+      setListening(true);
+      recRef.current = rec;
     } catch {
-      // Engine still cooling down from the previous turn — reset and retry.
-      try { rec.abort(); } catch {}
-      setTimeout(() => { try { rec.start(); } catch {} }, 200);
+      setListening(false);
     }
   };
   const readUp = () => {
