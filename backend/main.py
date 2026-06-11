@@ -496,6 +496,7 @@ class RealtimeRequest(BaseModel):
     student_name: str = ""
     target_info: list[dict] = []  # [{word, vi, example}] for the teacher
     grammar: dict = {}  # today's grammar point
+    transcribe_only: bool = False  # silent transcription session (read-aloud)
 
 
 @app.post("/session/instructions")
@@ -521,7 +522,13 @@ def realtime_token(req: RealtimeRequest, user: User = Depends(current_user)):
     try:
         name = req.student_name or user.name
         return mint_token(
-            req.target_words, req.mode, req.script, name, req.target_info, req.grammar
+            req.target_words,
+            req.mode,
+            req.script,
+            name,
+            req.target_info,
+            req.grammar,
+            req.transcribe_only,
         )
     except Exception as exc:
         raise HTTPException(502, f"failed to mint realtime token: {exc}")

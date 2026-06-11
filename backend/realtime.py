@@ -191,47 +191,46 @@ def mint_token(
     student_name: str = "",
     word_glosses: list[dict] | None = None,
     grammar: dict | None = None,
+    transcribe_only: bool = False,
 ) -> dict:
-    """Create an ephemeral Realtime session. Raises RuntimeError if no API key."""
+    """Create an ephemeral Realtime session. Raises RuntimeError if no API key.
+
+    transcribe_only=True yields a SILENT session (no AI replies, no tools) used
+    purely to transcribe the student's speech — for the read-aloud step, reusing
+    the same proven WebRTC mic as the speaking lesson.
+    """
     if not HAS_OPENAI:
         raise RuntimeError("OPENAI_API_KEY not configured; realtime voice unavailable.")
 
     import httpx  # bundled with the openai client's deps
 
-    instructions = build_instructions(
-        target_words, mode, script, student_name, word_glosses, grammar
-    )
-    payload = {
-        "session": {
-            "type": "realtime",
-            "model": OPENAI_REALTIME_MODEL,
-            "instructions": instructions,
-            # The model decides when a checkpoint is complete and calls this.
-            "tools": [CHECKPOINT_TOOL],
-            "tool_choice": "auto",
-            "audio": {
-                "input": {
-                    # Live transcription of the learner's speech — drives the
-                    # subtitles and tells the client a turn finished. whisper-1 +
-                    # language en transcribes literally (no paraphrasing).
-                    "transcription": {"model": OPENAI_TRANSCRIBE_MODEL, "language": "en"},
-                    # Detect end-of-turn (beginners pause a lot, so be generous)
-                    # and AUTO-reply once per turn, using the full session
-                    # instructions (persona + lesson plan + tool). The client only
-                    # triggers the opening greeting; everything else is automatic,
-                    # so the teacher always responds and keeps full context.
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "silence_duration_ms": 1500,
-                        "threshold": 0.5,
-                        "create_response": True,
-                        "interrupt_response": True,
-                    },
+    session = {
+        "type": "realtime",
+        "model": OPENAI_REALTIME_MODEL,
+        "audio": {
+            "input": {
+                "transcription": {"model": OPENAI_TRANSCRIBE_MODEL, "language": "en"},
+                "turn_detection": {
+                    "type": "server_vad",
+                    "silence_duration_ms": 1500,
+                    "threshold": 0.5,
+                    # No auto-reply when only transcribing.
+                    "create_response": not transcribe_only,
+                    "interrupt_response": True,
                 },
-                "output": {"voice": OPENAI_REALTIME_VOICE},
             },
-        }
+            "output": {"voice": OPENAI_REALTIME_VOICE},
+        },
     }
+    if transcribe_only:
+        session["instructions"] = "Silently transcribe the user. Never speak or reply."
+    else:
+        session["instructions"] = build_instructions(
+            target_words, mode, script, student_name, word_glosses, grammar
+        )
+        session["tools"] = [CHECKPOINT_TOOL]
+        session["tool_choice"] = "auto"
+    payload = {"session": session}
     resp = httpx.post(
         "https://api.openai.com/v1/realtime/client_secrets",
         headers={

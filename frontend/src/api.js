@@ -109,6 +109,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ target_words, mode }),
     }),
+  // Silent transcription-only realtime session (read-aloud mic).
+  transcribeToken: () =>
+    req("/session/realtime-token", {
+      method: "POST",
+      body: JSON.stringify({ transcribe_only: true }),
+    }),
   progress: () => req("/progress"),
   getProfile: () => req("/profile"),
   getAccount: () => req("/account"),
