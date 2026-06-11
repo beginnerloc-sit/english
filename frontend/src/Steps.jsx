@@ -156,14 +156,16 @@ export function Input({ lesson, onDone }) {
   const [idx, setIdx] = useState(0); // current line to read
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
-  const [result, setResult] = useState(null); // null | "ok" | "retry"
+  const [result, setResult] = useState(null); // null | "checking" | "ok" | "retry"
   const [congrats, setCongrats] = useState(false);
-  const [ready, setReady] = useState(false); // realtime mic connected
-  const [noMic, setNoMic] = useState(false); // couldn't connect -> manual fallback
-  const sessionRef = useRef(null);
-  const lineRef = useRef(null); // current line, for the realtime event closure
+  const mrRef = useRef(null);
+  const lineRef = useRef(null); // current line, for the onstop closure
   const scrollRef = useRef(null);
   const congratsFired = useRef(false);
+  const hasMic =
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof window.MediaRecorder !== "undefined";
   const allDone = idx >= dialogue.length;
   const line = dialogue[idx];
   lineRef.current = line;
@@ -192,57 +194,63 @@ export function Input({ lesson, onDone }) {
     }
   }, [allDone]);
 
-  // Open ONE realtime transcription session for the whole step (same proven mic
-  // as Luyện Nói). Push-to-talk toggles the mic; we read the transcript and match.
-  useEffect(() => {
-    let closed = false;
-    (async () => {
-      try {
-        const tok = await api.transcribeToken();
-        const secret = tok.client_secret?.value || tok.client_secret;
-        const session = await connectRealtime({
-          clientSecret: secret,
-          model: tok.model,
-          onRemoteTrack: () => {},
-          onEvent: (ev) => {
-            if (ev.type === "conversation.item.input_audio_transcription.completed") {
-              const said = (ev.transcript || "").trim();
-              if (!said) return;
-              setHeard(said);
-              const cur = lineRef.current;
-              if (cur && readingMatches(cur.en, said)) {
-                setResult("ok");
-                setTimeout(advance, 700);
-              } else {
-                setResult("retry");
-              }
-            }
-          },
-        });
-        if (closed) { session.close(); return; }
-        session.setMicEnabled(false);
-        sessionRef.current = session;
-        setReady(true);
-      } catch {
-        setNoMic(true);
-      }
-    })();
-    return () => { closed = true; try { sessionRef.current?.close(); } catch {} };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const readDown = () => {
-    if (!sessionRef.current) return;
-    unlockAudio();
+  // Record on hold, transcribe via the backend (Whisper) on release. We acquire
+  // the mic on the press (a user gesture, so the permission prompt works) and
+  // RELEASE it after each line — keeping the mic open would put the device in
+  // "call mode" and duck the line audio.
+  const readDown = async () => {
+    if (!hasMic) return;
+    unlockAudio(); // this gesture also unlocks line auto-play for later lines
     pauseAudio();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setResult("retry");
+      setHeard("(hãy cho phép micro cho trang này)");
+      return;
+    }
+    const target = lineRef.current;
+    const chunks = [];
+    let mr;
+    try {
+      mr = new MediaRecorder(stream);
+    } catch {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    mrRef.current = mr;
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop()); // release mic -> restore volume
+      setListening(false);
+      const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
+      if (!blob.size) { setResult(null); return; }
+      setResult("checking");
+      try {
+        const { text } = await api.transcribe(blob);
+        const said = (text || "").trim();
+        setHeard(said);
+        if (said && target && readingMatches(target.en, said)) {
+          setResult("ok");
+          setTimeout(advance, 700);
+        } else {
+          setResult("retry");
+        }
+      } catch {
+        setResult("retry");
+        setHeard("(lỗi nhận dạng, thử lại)");
+      }
+    };
     setResult(null);
     setHeard("");
+    mr.start();
     setListening(true);
-    sessionRef.current.setMicEnabled(true);
   };
   const readUp = () => {
-    setListening(false);
-    try { sessionRef.current?.setMicEnabled(false); } catch {}
+    try {
+      if (mrRef.current && mrRef.current.state !== "inactive") mrRef.current.stop();
+    } catch {}
   };
 
   return (
@@ -287,17 +295,20 @@ export function Input({ lesson, onDone }) {
       </div>
 
       {/* Pinned bottom controls */}
-      {!allDone && line && !noMic && (
+      {!allDone && line && hasMic && (
         <div className="read-controls">
-          {heard && (
-            <p className={`read-feedback ${result}`}>
-              {result === "ok" ? "✓ Tuyệt vời! " : "Bạn đọc: "}“{heard}”
-              {result === "retry" && " — thử lại nhé"}
-            </p>
+          {result === "checking" ? (
+            <p className="read-feedback">Đang kiểm tra…</p>
+          ) : (
+            heard && (
+              <p className={`read-feedback ${result}`}>
+                {result === "ok" ? "✓ Tuyệt vời! " : "Bạn đọc: "}“{heard}”
+                {result === "retry" && " — thử lại nhé"}
+              </p>
+            )
           )}
           <button
             className={`mic-fab ${listening ? "on" : ""}`}
-            disabled={!ready}
             onPointerDown={readDown}
             onPointerUp={readUp}
             onPointerLeave={() => listening && readUp()}
@@ -307,20 +318,16 @@ export function Input({ lesson, onDone }) {
             <MicGlyph size={28} />
           </button>
           <span className="read-hint">
-            {!ready
-              ? "Đang kết nối micro…"
-              : listening
-              ? "Đang nghe — thả khi xong"
-              : "Giữ để đọc"}
+            {listening ? "Đang nghe — thả khi xong" : "Giữ để đọc"}
             {" · "}
             <button className="link-skip" onClick={advance}>Bỏ qua ›</button>
           </span>
         </div>
       )}
 
-      {!allDone && line && noMic && (
+      {!allDone && line && !hasMic && (
         <div className="read-controls">
-          <p className="muted">Không kết nối được micro. Đọc to rồi nhấn tiếp.</p>
+          <p className="muted">Trình duyệt không hỗ trợ ghi âm. Đọc to rồi nhấn tiếp.</p>
           <button className="primary" onClick={advance}>Tôi đã đọc ›</button>
         </div>
       )}
