@@ -277,6 +277,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   display: flex; align-items: center; justify-content: center;
   background: var(--grad); color: #fff; border: none;
   box-shadow: 0 10px 26px rgba(21, 122, 99, 0.4);
+  touch-action: none; user-select: none; -webkit-user-select: none;
 }
 .mic-fab:hover { filter: brightness(1.05); background: var(--grad); }
 .mic-fab:active { transform: scale(0.94); }

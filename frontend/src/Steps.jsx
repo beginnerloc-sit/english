@@ -316,11 +316,10 @@ export function Input({ lesson, onDone }) {
           )}
           <button
             className={`mic-fab ${listening ? "on" : ""}`}
-            onMouseDown={readDown}
-            onMouseUp={readUp}
-            onMouseLeave={() => listening && readUp()}
-            onTouchStart={(e) => { e.preventDefault(); readDown(); }}
-            onTouchEnd={(e) => { e.preventDefault(); readUp(); }}
+            onPointerDown={readDown}
+            onPointerUp={readUp}
+            onPointerLeave={() => listening && readUp()}
+            onPointerCancel={readUp}
             aria-label="Giữ để đọc"
           >
             <MicGlyph size={28} />
@@ -732,11 +731,10 @@ export function Speak({ lesson, studentName, onError, onDone }) {
     <div className="ptt-mic-wrap">
       <button
         className={`mic-fab ${talking ? "on" : ""}`}
-        onMouseDown={pttDown}
-        onMouseUp={pttUp}
-        onMouseLeave={() => talking && pttUp()}
-        onTouchStart={(e) => { e.preventDefault(); pttDown(); }}
-        onTouchEnd={(e) => { e.preventDefault(); pttUp(); }}
+        onPointerDown={pttDown}
+        onPointerUp={pttUp}
+        onPointerLeave={() => talking && pttUp()}
+        onPointerCancel={pttUp}
         aria-label="Giữ để nói"
       >
         <MicGlyph size={28} />
