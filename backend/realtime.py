@@ -242,7 +242,9 @@ def mint_token(
         json=payload,
         timeout=30,
     )
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        # Surface OpenAI's actual error so failures are debuggable.
+        raise RuntimeError(f"OpenAI {resp.status_code}: {resp.text[:400]}")
     data = resp.json()
     # The client_secrets response returns the secret object directly
     # ({value, expires_at, session}); older shapes nested it under
@@ -255,5 +257,5 @@ def mint_token(
     return {
         "client_secret": secret,
         "model": OPENAI_REALTIME_MODEL,
-        "instructions": instructions,
+        "instructions": session.get("instructions", ""),
     }
