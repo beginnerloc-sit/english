@@ -161,6 +161,7 @@ export function Input({ lesson, onDone }) {
   const recRef = useRef(null);
   const scrollRef = useRef(null);
   const congratsFired = useRef(false);
+  const micReadyRef = useRef(false);
   const hasSR =
     typeof window !== "undefined" &&
     (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -191,10 +192,9 @@ export function Input({ lesson, onDone }) {
 
   const advance = () => setIdx((i) => i + 1);
 
-  // Press to talk. iOS Safari won't reliably REUSE a recognition instance, so we
-  // create a FRESH one every press (and never call speechSynthesis.cancel, which
-  // wedges recognition on iOS — we only pause the played <audio>).
-  const readDown = () => {
+  // Start a fresh recognition (iOS won't reliably reuse one). Never calls
+  // speechSynthesis.cancel (it wedges recognition on iOS) — only pauses <audio>.
+  const startSR = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
     try { recRef.current?.abort?.(); } catch {}
@@ -203,7 +203,7 @@ export function Input({ lesson, onDone }) {
 
     const rec = new SR();
     rec.lang = "en-US";
-    rec.continuous = false; // also auto-stops on silence (tap OR hold both work)
+    rec.continuous = false;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
     let finalText = "";
@@ -235,7 +235,6 @@ export function Input({ lesson, onDone }) {
     };
     setResult(null);
     setHeard("");
-    // start() must run inside the user gesture (iOS requirement) — call directly.
     try {
       rec.start();
       setListening(true);
@@ -243,6 +242,29 @@ export function Input({ lesson, onDone }) {
     } catch {
       setListening(false);
     }
+  };
+
+  const readDown = () => {
+    // First press: explicitly request the mic so the browser shows the permission
+    // popup (SpeechRecognition alone doesn't reliably prompt, esp. on iOS).
+    if (!micReadyRef.current) {
+      pauseAudio();
+      setHeard("Đang xin quyền micro…");
+      navigator.mediaDevices
+        ?.getUserMedia({ audio: true })
+        .then((s) => {
+          s.getTracks().forEach((t) => t.stop());
+          micReadyRef.current = true;
+          setHeard("");
+          startSR();
+        })
+        .catch(() => {
+          setResult("retry");
+          setHeard("(hãy cho phép micro cho trang này rồi thử lại)");
+        });
+      return;
+    }
+    startSR();
   };
   const readUp = () => {
     try { recRef.current?.stop(); } catch {}
