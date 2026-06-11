@@ -587,9 +587,22 @@ textarea:focus { outline: none; box-shadow: var(--ring); border-color: var(--acc
 .center-text { text-align: center; }
 
 /* Profile */
-/* Profile fills the screen so logout pins to the bottom */
+/* Profile fills the screen; leaderboard + logout sit at the bottom */
 .app-body > .view.profile-view { display: flex; flex-direction: column; }
-.profile-view .logout-row { margin-top: auto; padding-top: 18px; }
+.profile-view .leaderboard { margin-top: 14px; }
+.profile-view .logout-row { margin-top: auto; padding-top: 12px; }
+
+.leaderboard {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 12px 14px; box-shadow: var(--shadow);
+}
+.lb-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ink-soft); margin-bottom: 6px; }
+.lb-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; }
+.lb-rank { width: 24px; text-align: center; font-weight: 700; }
+.lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; text-transform: capitalize; }
+.lb-count { font-weight: 800; color: var(--accent); }
+.lb-row.me { color: var(--accent); }
+.lb-row.me .lb-name { font-weight: 800; }
 
 .row-link {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;

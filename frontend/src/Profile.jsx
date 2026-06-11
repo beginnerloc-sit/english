@@ -6,10 +6,12 @@ export default function Profile({ onRename, onLogout, onOpenLessons, onOpenWords
   const [p, setP] = useState(null);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState(false);
+  const [board, setBoard] = useState([]);
   const [err, setErr] = useState(null);
 
   useEffect(() => {
     api.getProfile().then((d) => { setP(d); setName(d.name || ""); }).catch((e) => setErr(e.message));
+    api.getLeaderboard().then(setBoard).catch(() => {});
   }, []);
 
   const saveName = async () => {
@@ -82,6 +84,19 @@ export default function Profile({ onRename, onLogout, onOpenLessons, onOpenWords
         <span className="rl-count">{p.conversations ?? 0}</span>
         <span className="rl-arrow">›</span>
       </button>
+
+      {board.length > 0 && (
+        <div className="leaderboard">
+          <div className="lb-title">🏆 Bảng xếp hạng · Bài học</div>
+          {board.map((r) => (
+            <div key={r.rank} className={`lb-row ${r.is_me ? "me" : ""}`}>
+              <span className="lb-rank">{["🥇", "🥈", "🥉"][r.rank - 1] || r.rank}</span>
+              <span className="lb-name">{r.name}{r.is_me ? " (bạn)" : ""}</span>
+              <span className="lb-count">{r.lessons}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="actions logout-row">
         <button className="ghost" onClick={onLogout}>Đăng xuất</button>

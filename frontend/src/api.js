@@ -58,6 +58,7 @@ export const api = {
   getLesson: (id) => req(`/lesson/${id}`),
   completeLesson: (id) => req(`/lesson/${id}/complete`, { method: "POST" }),
   getGrammar: () => req("/grammar"),
+  getLeaderboard: () => req("/leaderboard"),
   getWords: () => req("/words"),
   saveConversation: (lesson_id, theme, turns) =>
     req("/conversation", {
@@ -149,7 +150,22 @@ export const api = {
 // voice as a fallback if the key/endpoint is unavailable. Audio is cached per
 // text so replays are instant.
 const _ttsCache = new Map();
-let _current = null;
+
+// ONE reused <audio> element. Mobile blocks play() outside a user gesture, but a
+// single element "unlocked" once by a gesture can be replayed programmatically —
+// so later lines auto-play. (A brand-new Audio() each time stays blocked.)
+let _audioEl = null;
+function audioEl() {
+  if (!_audioEl) _audioEl = new Audio();
+  return _audioEl;
+}
+
+// Call inside a user gesture (e.g. first mic press) to allow later auto-play.
+export function unlockAudio() {
+  const a = audioEl();
+  a.muted = true;
+  a.play().then(() => { a.pause(); a.muted = false; }).catch(() => { a.muted = false; });
+}
 
 // Rough pitch split so the two speakers still differ on the fallback voice.
 const _LOW_VOICES = new Set(["onyx", "echo", "fable"]);
@@ -165,27 +181,20 @@ function browserSpeak(text, rate, voice) {
 }
 
 export function stopAudio() {
-  if (_current) {
-    _current.pause();
-    _current = null;
-  }
+  if (_audioEl) _audioEl.pause();
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 }
 
 // Pause only the played clip (doesn't touch speechSynthesis / mic).
 export function pauseAudio() {
-  if (_current) {
-    _current.pause();
-    _current = null;
-  }
+  if (_audioEl) _audioEl.pause();
 }
 
-// Resolves when playback *finishes* so callers can chain lines sequentially
-// (e.g. "Play all" alternating between the two speakers' voices).
+// Resolves when playback *finishes* so callers can chain lines sequentially.
 export async function speak(text, { rate = 0.95, voice } = {}) {
   text = (text || "").trim();
   if (!text) return;
-  stopAudio();
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   try {
     const key = `${voice || ""}|${text}`;
     let url = _ttsCache.get(key);
@@ -199,12 +208,13 @@ export async function speak(text, { rate = 0.95, voice } = {}) {
       url = URL.createObjectURL(await res.blob());
       _ttsCache.set(key, url);
     }
-    const audio = new Audio(url);
-    _current = audio;
+    const a = audioEl();
+    a.src = url;
+    a.muted = false;
     await new Promise((resolve) => {
-      audio.onended = resolve;
-      audio.onerror = resolve;
-      audio.play().catch(() => resolve());
+      a.onended = resolve;
+      a.onerror = resolve;
+      a.play().catch(() => resolve());
     });
   } catch {
     browserSpeak(text, rate, voice); // graceful fallback

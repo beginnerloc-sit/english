@@ -21,7 +21,9 @@ OPENAI_TRANSLATE_MODEL = os.getenv("OPENAI_TRANSLATE_MODEL", "gpt-4o-mini").stri
 # time — these change often). gpt-realtime-2 is the reasoning voice model.
 OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2").strip()
 OPENAI_REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "alloy").strip()
-OPENAI_TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-realtime-whisper").strip()
+# Literal transcription of the student's speech in realtime (whisper-1 transcribes
+# word-for-word; the "smart" models paraphrase, e.g. "not happy" -> "sad").
+OPENAI_TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "whisper-1").strip()
 # Reading voice (TTS) for dialogue/word playback — natural OpenAI voices.
 OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts").strip()
 OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova").strip()

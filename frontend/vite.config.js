@@ -14,6 +14,7 @@ export default defineConfig({
         "/conversation",
         "/lesson",
         "/grammar",
+        "/leaderboard",
         "/word",
         "/words",
         "/vocab",

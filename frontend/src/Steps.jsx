@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, speak, stopAudio, pauseAudio } from "./api.js";
+import { api, speak, stopAudio, pauseAudio, unlockAudio } from "./api.js";
 import { connectRealtime } from "./realtimeClient.js";
 
 // Clean speaker icon (inherits text color) — replaces the inconsistent <SpeakerIcon /> emoji.
@@ -156,15 +156,17 @@ export function Input({ lesson, onDone }) {
   const [idx, setIdx] = useState(0); // current line to read
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
-  const [result, setResult] = useState(null); // null | "ok" | "retry"
+  const [result, setResult] = useState(null); // null | "checking" | "ok" | "retry"
   const [congrats, setCongrats] = useState(false);
-  const recRef = useRef(null);
+  const streamRef = useRef(null);
+  const mrRef = useRef(null);
+  const chunksRef = useRef([]);
   const scrollRef = useRef(null);
   const congratsFired = useRef(false);
-  const micReadyRef = useRef(false);
-  const hasSR =
-    typeof window !== "undefined" &&
-    (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const hasMic =
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof window.MediaRecorder !== "undefined";
   const allDone = idx >= dialogue.length;
   const line = dialogue[idx];
 
@@ -192,86 +194,67 @@ export function Input({ lesson, onDone }) {
 
   const advance = () => setIdx((i) => i + 1);
 
-  // Start a fresh recognition (iOS won't reliably reuse one). Never calls
-  // speechSynthesis.cancel (it wedges recognition on iOS) — only pauses <audio>.
-  const startSR = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    try { recRef.current?.abort?.(); } catch {}
-    recRef.current = null;
+  // Record on hold, transcribe via the backend (Whisper) on release. Reliable on
+  // mobile/iOS where the Web Speech API isn't. getUserMedia shows the mic prompt.
+  const readDown = async () => {
+    if (!hasMic) return;
+    unlockAudio(); // this gesture also unlocks line auto-play for later lines
     pauseAudio();
-
-    const rec = new SR();
-    rec.lang = "en-US";
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-    let finalText = "";
-    let interim = "";
-    const target = line;
-    rec.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalText += r[0].transcript + " ";
-        else interim = r[0].transcript;
-      }
-    };
-    rec.onerror = (e) => {
-      setListening(false);
-      if (e.error === "not-allowed" || e.error === "service-not-allowed")
-        setHeard("(hãy cho phép micro cho trang này)");
-    };
-    rec.onend = () => {
-      setListening(false);
-      const said = (finalText.trim() || interim).trim();
-      if (!said) return;
-      setHeard(said);
-      if (target && readingMatches(target.en, said)) {
-        setResult("ok");
-        setTimeout(advance, 700);
-      } else {
-        setResult("retry");
-      }
-    };
-    setResult(null);
-    setHeard("");
     try {
-      rec.start();
-      setListening(true);
-      recRef.current = rec;
+      if (!streamRef.current) {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
     } catch {
-      setListening(false);
-    }
-  };
-
-  const readDown = () => {
-    // First press: explicitly request the mic so the browser shows the permission
-    // popup (SpeechRecognition alone doesn't reliably prompt, esp. on iOS).
-    if (!micReadyRef.current) {
-      pauseAudio();
-      setHeard("Đang xin quyền micro…");
-      navigator.mediaDevices
-        ?.getUserMedia({ audio: true })
-        .then((s) => {
-          s.getTracks().forEach((t) => t.stop());
-          micReadyRef.current = true;
-          setHeard("");
-          startSR();
-        })
-        .catch(() => {
-          setResult("retry");
-          setHeard("(hãy cho phép micro cho trang này rồi thử lại)");
-        });
+      setResult("retry");
+      setHeard("(hãy cho phép micro cho trang này)");
       return;
     }
-    startSR();
+    const target = line;
+    chunksRef.current = [];
+    let mr;
+    try {
+      mr = new MediaRecorder(streamRef.current);
+    } catch {
+      return;
+    }
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
+    mr.onstop = async () => {
+      setListening(false);
+      const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+      if (!blob.size) { setResult(null); return; }
+      setResult("checking");
+      try {
+        const { text } = await api.transcribe(blob);
+        const said = (text || "").trim();
+        setHeard(said);
+        if (said && target && readingMatches(target.en, said)) {
+          setResult("ok");
+          setTimeout(advance, 700);
+        } else {
+          setResult("retry");
+        }
+      } catch {
+        setResult("retry");
+        setHeard("(lỗi nhận dạng, thử lại)");
+      }
+    };
+    mrRef.current = mr;
+    setResult(null);
+    setHeard("");
+    mr.start();
+    setListening(true);
   };
   const readUp = () => {
-    try { recRef.current?.stop(); } catch {}
+    try {
+      if (mrRef.current && mrRef.current.state !== "inactive") mrRef.current.stop();
+    } catch {}
   };
 
-  // Tear down on unmount.
-  useEffect(() => () => { try { recRef.current?.abort?.(); } catch {} }, []);
+  // Release the mic stream on unmount.
+  useEffect(
+    () => () => { try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {} },
+    []
+  );
 
   return (
     <div className="read-step">
@@ -315,13 +298,17 @@ export function Input({ lesson, onDone }) {
       </div>
 
       {/* Pinned bottom controls */}
-      {!allDone && line && hasSR && (
+      {!allDone && line && hasMic && (
         <div className="read-controls">
-          {heard && (
-            <p className={`read-feedback ${result}`}>
-              {result === "ok" ? "✓ Tuyệt vời! " : "Bạn đọc: "}“{heard}”
-              {result === "retry" && " — thử lại nhé"}
-            </p>
+          {result === "checking" ? (
+            <p className="read-feedback">Đang kiểm tra…</p>
+          ) : (
+            heard && (
+              <p className={`read-feedback ${result}`}>
+                {result === "ok" ? "✓ Tuyệt vời! " : "Bạn đọc: "}“{heard}”
+                {result === "retry" && " — thử lại nhé"}
+              </p>
+            )
           )}
           <button
             className={`mic-fab ${listening ? "on" : ""}`}
@@ -341,9 +328,9 @@ export function Input({ lesson, onDone }) {
         </div>
       )}
 
-      {!allDone && line && !hasSR && (
+      {!allDone && line && !hasMic && (
         <div className="read-controls">
-          <p className="muted">Trình duyệt không hỗ trợ nhận giọng nói (dùng Chrome). Đọc to rồi nhấn tiếp.</p>
+          <p className="muted">Trình duyệt không hỗ trợ ghi âm. Đọc to rồi nhấn tiếp.</p>
           <button className="primary" onClick={advance}>Tôi đã đọc ›</button>
         </div>
       )}
@@ -558,6 +545,7 @@ export function Speak({ lesson, studentName, onError, onDone }) {
   const turnSeq = useRef(0);
   const logRef = useRef(null); // transcript scroll container
   const congratsFired = useRef(false);
+  const attemptsRef = useRef({}); // per-checkpoint student turns (escape backstop)
 
   const allDone = done.size >= script.length;
   const cur = script.findIndex((c) => !done.has(c.id));
@@ -656,13 +644,19 @@ export function Speak({ lesson, studentName, onError, onDone }) {
             }
           }
 
-          // Student's turn recognized -> just log it. The server auto-replies
-          // (create_response is on) using the full session instructions.
+          // Student's turn recognized -> log it (server auto-replies). Backstop:
+          // if the teacher gets stuck on one point, advance it after a couple of
+          // student turns so the lesson never traps the student in a repeat loop.
           if (ev.type === "conversation.item.input_audio_transcription.completed") {
             const t = ev.transcript || "";
             setHeard(t);
             addTurn("student", t);
             onError?.(t);
+            const cid = currentId();
+            if (cid) {
+              attemptsRef.current[cid] = (attemptsRef.current[cid] || 0) + 1;
+              if (attemptsRef.current[cid] >= 2) markDone(cid);
+            }
           }
         },
       });

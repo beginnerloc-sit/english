@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import srs
@@ -760,6 +761,29 @@ def get_conversation(
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "turns": json.loads(c.turns_json or "[]"),
     }
+
+
+@app.get("/leaderboard")
+def leaderboard(user: User = Depends(current_user), db: Session = Depends(get_session)):
+    """Top 5 learners by lessons completed."""
+    cnt = func.count(LessonProgress.id)
+    rows = (
+        db.query(User.id, User.name, User.username, cnt)
+        .outerjoin(LessonProgress, LessonProgress.user_id == User.id)
+        .group_by(User.id)
+        .order_by(cnt.desc(), User.id.asc())
+        .limit(5)
+        .all()
+    )
+    return [
+        {
+            "rank": i + 1,
+            "name": (r[1] or r[2]),
+            "lessons": r[3],
+            "is_me": r[0] == user.id,
+        }
+        for i, r in enumerate(rows)
+    ]
 
 
 @app.get("/grammar")
