@@ -194,8 +194,12 @@ export function Input({ lesson, onDone }) {
   // Hold-to-talk: capture audio while held, evaluate the whole thing on release.
   const readDown = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR || listening) return;
+    if (!SR) return;
+    // Kill any leftover recognition so a new press always starts fresh.
+    try { recRef.current?.abort?.(); } catch {}
+    recRef.current = null;
     window.speechSynthesis?.cancel(); // stop the auto-played line so the mic is clean
+
     const rec = new SR();
     rec.lang = "en-US";
     rec.continuous = true;
@@ -210,9 +214,13 @@ export function Input({ lesson, onDone }) {
         else interim = r[0].transcript;
       }
     };
-    rec.onerror = () => setListening(false);
+    rec.onerror = () => {
+      setListening(false);
+      if (recRef.current === rec) recRef.current = null;
+    };
     rec.onend = () => {
       setListening(false);
+      if (recRef.current === rec) recRef.current = null;
       const said = (finalText.trim() || interim).trim();
       if (!said) return; // nothing captured
       setHeard(said);
@@ -223,10 +231,14 @@ export function Input({ lesson, onDone }) {
         setResult("retry");
       }
     };
-    setListening(true);
     setResult(null);
-    try { rec.start(); } catch {}
-    recRef.current = rec;
+    try {
+      rec.start();
+      setListening(true);
+      recRef.current = rec;
+    } catch {
+      setListening(false);
+    }
   };
   const readUp = () => {
     try { recRef.current?.stop(); } catch {}
