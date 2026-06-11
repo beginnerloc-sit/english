@@ -160,6 +160,14 @@ export function stopAudio() {
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 }
 
+// Pause only the played clip (doesn't touch speechSynthesis / mic).
+export function pauseAudio() {
+  if (_current) {
+    _current.pause();
+    _current = null;
+  }
+}
+
 // Resolves when playback *finishes* so callers can chain lines sequentially
 // (e.g. "Play all" alternating between the two speakers' voices).
 export async function speak(text, { rate = 0.95, voice } = {}) {

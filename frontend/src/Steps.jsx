@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, speak, stopAudio } from "./api.js";
+import { api, speak, stopAudio, pauseAudio } from "./api.js";
 import { connectRealtime } from "./realtimeClient.js";
 
 // Clean speaker icon (inherits text color) — replaces the inconsistent <SpeakerIcon /> emoji.
@@ -159,6 +159,7 @@ export function Input({ lesson, onDone }) {
   const [result, setResult] = useState(null); // null | "ok" | "retry"
   const [congrats, setCongrats] = useState(false);
   const recRef = useRef(null);
+  const accRef = useRef({ final: "", interim: "", target: null });
   const scrollRef = useRef(null);
   const congratsFired = useRef(false);
   const hasSR =
@@ -191,58 +192,63 @@ export function Input({ lesson, onDone }) {
 
   const advance = () => setIdx((i) => i + 1);
 
-  // Hold-to-talk: capture audio while held, evaluate the whole thing on release.
-  const readDown = () => {
+  // One persistent recognition instance, reused across presses (creating a new
+  // one each time hits Chrome's cooldown and fails on the 2nd press).
+  const ensureRec = () => {
+    if (recRef.current) return recRef.current;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    // Kill any leftover recognition so a new press always starts fresh.
-    try { recRef.current?.abort?.(); } catch {}
-    recRef.current = null;
-    stopAudio(); // stop the auto-played line (TTS) so the mic only hears the student
-
+    if (!SR) return null;
     const rec = new SR();
     rec.lang = "en-US";
     rec.continuous = true;
     rec.interimResults = true;
-    let finalText = "";
-    let interim = "";
-    const target = line;
     rec.onresult = (e) => {
+      const a = accRef.current;
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
-        if (r.isFinal) finalText += r[0].transcript + " ";
-        else interim = r[0].transcript;
+        if (r.isFinal) a.final += r[0].transcript + " ";
+        else a.interim = r[0].transcript;
       }
     };
-    rec.onerror = () => {
-      setListening(false);
-      if (recRef.current === rec) recRef.current = null;
-    };
+    rec.onerror = () => setListening(false);
     rec.onend = () => {
       setListening(false);
-      if (recRef.current === rec) recRef.current = null;
-      const said = (finalText.trim() || interim).trim();
-      if (!said) return; // nothing captured
+      const a = accRef.current;
+      const said = (a.final.trim() || a.interim).trim();
+      if (!said) return;
       setHeard(said);
-      if (target && readingMatches(target.en, said)) {
+      if (a.target && readingMatches(a.target.en, said)) {
         setResult("ok");
         setTimeout(advance, 700);
       } else {
         setResult("retry");
       }
     };
+    recRef.current = rec;
+    return rec;
+  };
+
+  // Hold-to-talk: capture audio while held, evaluate on release.
+  const readDown = () => {
+    const rec = ensureRec();
+    if (!rec) return;
+    pauseAudio(); // stop the auto-played line so the mic only hears the student
+    accRef.current = { final: "", interim: "", target: line };
     setResult(null);
     try {
       rec.start();
       setListening(true);
-      recRef.current = rec;
     } catch {
-      setListening(false);
+      // Already running (fast re-press) — restart cleanly.
+      try { rec.stop(); } catch {}
     }
   };
   const readUp = () => {
     try { recRef.current?.stop(); } catch {}
   };
+
+  // Tear down recognition on unmount.
+  useEffect(() => () => { try { recRef.current?.abort?.(); } catch {} }, []);
 
   return (
     <div className="read-step">
